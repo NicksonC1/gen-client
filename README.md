@@ -1,4 +1,4 @@
-<img src="images/genclient.jpg">
+<img src="images/genclient.png">
 
 A ready-to-use VEX V5 PROS template with common subsystems, driver utilities, and autonomous helpers baked in. 
 Configure your robot, drop in your auton routines, and start cooking up some autons!
