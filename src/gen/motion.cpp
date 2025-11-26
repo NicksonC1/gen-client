@@ -22,6 +22,22 @@ Motion::Motion(pros::MotorGroup& left,
       lateralPid_(lateral.kP, lateral.kI, lateral.kD, 0, false),
       headingPid_(angular.kP, angular.kI, angular.kD, 0, false) {}
 
+Pose Motion::getPose(const bool radians) const { return gen::getPose(radians); }
+
+void Motion::tank(const int leftPower, const int rightPower) {
+  const int leftCmd = static_cast<int>(std::clamp(leftPower, -127, 127));
+  const int rightCmd = static_cast<int>(std::clamp(rightPower, -127, 127));
+  left_.move(leftCmd);
+  right_.move(rightCmd);
+}
+
+void Motion::arcade(const int forward, const int turn) { tank(forward + turn, forward - turn); }
+
+void Motion::stop() {
+  left_.move(0);
+  right_.move(0);
+}
+
 double Motion::wrapAngleDeg(double angleDeg) {
   while (angleDeg > 180.0) angleDeg -= 360.0;
   while (angleDeg < -180.0) angleDeg += 360.0;
@@ -36,9 +52,9 @@ double Motion::clampPower(const double value, const double maxPower, const Tunin
 }
 
 void Motion::turnHeading(const double targetDeg,
+                         const std::uint32_t timeoutMs,
                          const double minPower,
-                         const double maxPower,
-                         const std::uint32_t timeoutMs) {
+                         const double maxPower) {
   headingPid_.reset();
 
   const std::uint32_t start = pros::millis();
@@ -67,20 +83,20 @@ void Motion::turnHeading(const double targetDeg,
 
 void Motion::turnPoint(const double targetX,
                        const double targetY,
+                       const std::uint32_t timeoutMs,
                        const double minPower,
-                       const double maxPower,
-                       const std::uint32_t timeoutMs) {
+                       const double maxPower) {
   const Pose pose = gen::getPose(true);
   const double targetHeading =
       rad_to_deg(std::atan2(targetX - pose.x, targetY - pose.y));  // face the point
-  turnHeading(targetHeading, minPower, maxPower, timeoutMs);
+  turnHeading(targetHeading, timeoutMs, minPower, maxPower);
 }
 
 void Motion::movePoint(const double targetX,
                        const double targetY,
+                       const std::uint32_t timeoutMs,
                        const double minPower,
                        const double maxPower,
-                       const std::uint32_t timeoutMs,
                        const bool settle) {
   lateralPid_.reset();
   headingPid_.reset();
@@ -124,9 +140,9 @@ void Motion::movePose(const double targetX,
                       const double targetHeadingDeg,
                       const double dLead,
                       const double gLead,
+                      const std::uint32_t timeoutMs,
                       const double minPower,
                       const double maxPower,
-                      const std::uint32_t timeoutMs,
                       const bool settle) {
   // Lead the target to reduce corner-cutting (similar to inspo: dLead forward, gLead lateral).
   const double targetHeadingRad = deg_to_rad(targetHeadingDeg);
@@ -177,11 +193,6 @@ void Motion::movePose(const double targetX,
   }
 
   stop();
-}
-
-void Motion::stop() {
-  left_.move(0);
-  right_.move(0);
 }
 
 }  // namespace gen

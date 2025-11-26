@@ -21,46 +21,87 @@ class Motion {
     double kD{0.0};
     double headingToleranceDeg{2.0};
     std::int32_t settleTimeMs{250};
-    std::int32_t timeoutMs{3000};
     double maxCommand{127.0};
     double minCommand{0.0};
   };
 
+  /**
+   * @param left motor group to command (left side)
+   * @param right motor group to command (right side)
+   * @param lateral PID limits and tolerances for translation
+   * @param angular PID limits and tolerances for rotation
+   */
   Motion(pros::MotorGroup& left, pros::MotorGroup& right, Tuning lateral, Tuning angular);
 
+  // Low-level helpers.
+  Pose getPose(bool radians = false) const;
+  void tank(int leftPower, int rightPower);
+  void arcade(int forward, int turn);
+  void stop();
+
   // Rotate to an absolute field heading (degrees).
+  /**
+   * @param targetDeg absolute field heading in degrees
+   * @param timeoutMs maximum duration before abort
+   * @param minPower minimum absolute power to overcome static friction
+   * @param maxPower cap as percentage of full (100 -> 127 internal)
+   */
   void turnHeading(double targetDeg,
+                   std::uint32_t timeoutMs = 3000,
                    double minPower = 0.0,
-                   double maxPower = 100.0,
-                   std::uint32_t timeoutMs = 3000);
+                   double maxPower = 100.0);
 
   // Rotate to face a field point.
+  /**
+   * @param targetX field X in inches
+   * @param targetY field Y in inches
+   * @param timeoutMs maximum duration before abort
+   * @param minPower minimum absolute power to overcome static friction
+   * @param maxPower cap as percentage of full (100 -> 127 internal)
+   */
   void turnPoint(double targetX,
                  double targetY,
+                 std::uint32_t timeoutMs = 3000,
                  double minPower = 0.0,
-                 double maxPower = 100.0,
-                 std::uint32_t timeoutMs = 3000);
+                 double maxPower = 100.0);
 
   // Drive to a point while correcting heading toward that point.
+  /**
+   * @param targetX field X in inches
+   * @param targetY field Y in inches
+   * @param timeoutMs maximum duration before abort
+   * @param minPower minimum absolute power to overcome static friction
+   * @param maxPower cap as percentage of full (100 -> 127 internal)
+   * @param settle require dwell in tolerance before exit
+   */
   void movePoint(double targetX,
                  double targetY,
+                 std::uint32_t timeoutMs = 4000,
                  double minPower = 0.0,
                  double maxPower = 100.0,
-                 std::uint32_t timeoutMs = 4000,
                  bool settle = true);
 
   // Drive to a pose with lookahead leads (dLead along heading, gLead lateral to heading).
+  /**
+   * @param targetX field X in inches
+   * @param targetY field Y in inches
+   * @param targetHeadingDeg desired final heading (degrees)
+   * @param dLead forward lead distance along heading
+   * @param gLead lateral lead distance perpendicular to heading
+   * @param timeoutMs maximum duration before abort
+   * @param minPower minimum absolute power to overcome static friction
+   * @param maxPower cap as percentage of full (100 -> 127 internal)
+   * @param settle require dwell in tolerance before exit
+   */
   void movePose(double targetX,
                 double targetY,
                 double targetHeadingDeg,
                 double dLead,
                 double gLead,
+                std::uint32_t timeoutMs = 5000,
                 double minPower = 0.0,
                 double maxPower = 100.0,
-                std::uint32_t timeoutMs = 5000,
                 bool settle = true);
-
-  void stop();
 
  private:
   static double wrapAngleDeg(double angleDeg);

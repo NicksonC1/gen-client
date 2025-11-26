@@ -1,8 +1,8 @@
 #include "main.h"
-#include "gen/chassis.h"
 #include "gen/colorsort.h"
 #include "gen/electronics.h"
 #include "gen/odom.h"
+#include "gen/motion.h"
 #include "pros/distance.hpp"
 #include "pros/optical.hpp"
 #include "gen/exit.h"
@@ -38,33 +38,48 @@ std::vector<gen::DistanceResetSensor> distanceResetSensors = {
     {&leftWall, gen::DistanceResetSensor::Side::Left, -4.0, 10.0},
 };
 
-gen::Chassis::Tuning lateralTuning{8.0,   // kP: proportional gain for linear error
-                                   0.0,   // kI: integral gain for linear error
-                                   0.0,   // kD: derivative gain for linear error
-                                   2.0,   // headingToleranceDeg: acceptable angular error while driving
-                                   250,   // settleTimeMs: how long error must stay within tolerance
-                                   4000,  // timeoutMs: max time to try the move
-                                   127.0  // maxCommand: clamp for motor command
+gen::Motion::Tuning lateralTuning{8.0,   // kP: proportional gain for linear error
+                                  0.0,   // kI: integral gain for linear error
+                                  0.0,   // kD: derivative gain for linear error
+                                  2.0,   // headingToleranceDeg: acceptable angular error while driving
+                                  250,   // settleTimeMs: how long error must stay within tolerance
+                                  127.0  // maxCommand: clamp for motor command
 };
-gen::Chassis::Tuning angularTuning{2.0,   // kP: proportional gain for turns
-                                   0.0,   // kI: integral gain for turns
-                                   0.0,   // kD: derivative gain for turns
-                                   2.0,   // headingToleranceDeg: acceptable heading error when turning
-                                   250,   // settleTimeMs: how long heading must stay within tolerance
-                                   3000,  // timeoutMs: max time to try the turn
-                                   127.0  // maxCommand: clamp for motor command
+gen::Motion::Tuning angularTuning{2.0,   // kP: proportional gain for turns
+                                  0.0,   // kI: integral gain for turns
+                                  0.0,   // kD: derivative gain for turns
+                                  2.0,   // headingToleranceDeg: acceptable heading error when turning
+                                  250,   // settleTimeMs: how long heading must stay within tolerance
+                                  127.0  // maxCommand: clamp for motor command
 };
 
-gen::Chassis chassis(leftMotors, rightMotors, drive, lateralTuning, angularTuning);
+gen::Motion motion(leftMotors, rightMotors, lateralTuning, angularTuning);
 
 // gen::ExitConditions exits;
 
 namespace Auton{
     void main(){
-      chassis.driveDistance(24.0);
-      chassis.turnToHeading(90.0);
-      chassis.strafeDistance(-12.0);
-      chassis.driveToPose({24.0, 36.0, 45.0});
+      // Drive forward 24" relative to current heading.
+      {
+        const auto pose = motion.getPose(true);
+        const double targetX = pose.x + 24.0 * std::sin(pose.theta);
+        const double targetY = pose.y + 24.0 * std::cos(pose.theta);
+        motion.movePoint(targetX, targetY, 4000, 5.0, 100.0, true);
+      }
+
+      // Turn to absolute heading 90 deg.
+      motion.turnHeading(90.0, 3000, 5.0, 100.0);
+
+      // Strafe left 12" relative to new heading.
+      {
+        const auto pose = motion.getPose(true);
+        const double targetX = pose.x + (-12.0) * -std::cos(pose.theta);
+        const double targetY = pose.y + (-12.0) * std::sin(pose.theta);
+        motion.movePoint(targetX, targetY, 4000, 5.0, 100.0, true);
+      }
+
+      // Move to a field pose with final heading 45 deg.
+      motion.movePose(24.0, 36.0, 45.0, 2.0, 0.5, 5000, 5.0, 100.0, true);
     }
     void leftB(){}
     void leftR(){}
@@ -110,9 +125,10 @@ void initialize() {
 
   pros::Task screenTask([&]() {
     while (1) {
-        pros::lcd::print(0, "X: %f", chassis.getPose().x);
-        pros::lcd::print(1, "Y: %f", chassis.getPose().y);
-        pros::lcd::print(2, "Theta: %f", chassis.getPose().theta);
+        const auto pose = motion.getPose();
+        pros::lcd::print(0, "X: %f", pose.x);
+        pros::lcd::print(1, "Y: %f", pose.y);
+        pros::lcd::print(2, "Theta: %f", pose.theta);
         pros::delay(50);
       }
   });
