@@ -24,6 +24,10 @@ Motion::Motion(pros::MotorGroup& left,
 
 Pose Motion::getPose(const bool radians) const { return gen::getPose(radians); }
 
+void Motion::setPose(const double x, const double y, const double theta, const bool radians) {
+  gen::setPose({x, y, theta}, radians);
+}
+
 void Motion::tank(const int leftPower, const int rightPower) {
   const int leftCmd = static_cast<int>(std::clamp(leftPower, -127, 127));
   const int rightCmd = static_cast<int>(std::clamp(rightPower, -127, 127));

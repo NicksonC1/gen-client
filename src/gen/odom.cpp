@@ -1,9 +1,11 @@
 #include "gen/odom.h"
 
 #include <cmath>
+#include <cstdint>
 #include <vector>
 
 #include "pros/motor_group.hpp"
+#include "pros/misc.hpp"
 #include "pros/rtos.hpp"
 
 namespace {
@@ -15,6 +17,7 @@ constexpr double kMmToInches = 1.0 / 25.4;
 namespace gen {
 namespace {
 pros::Task* trackingTask = nullptr;
+pros::Task* imuFeedbackTask = nullptr;
 OdomSensors odomSensors{};
 Drivetrain drive{};
 Pose odomPose{};
@@ -30,6 +33,71 @@ double prevHorizontal = 0.0;
 double prevHorizontal1 = 0.0;
 double prevHorizontal2 = 0.0;
 double prevImu = 0.0;
+
+bool calibrateImu(OdomSensors& sensors, pros::Controller* feedbackController) {
+  if (sensors.imu == nullptr) return true;
+
+  auto canBuzz = [] { return !pros::competition::is_connected(); };
+
+  for (int attempt = 1; attempt <= 5; ++attempt) {
+    sensors.imu->reset();
+
+    // Kick off optional driver feedback while calibrating.
+    if (feedbackController != nullptr && imuFeedbackTask == nullptr && canBuzz()) {
+      imuFeedbackTask = new pros::Task([imu = sensors.imu, controller = feedbackController] {
+        const std::uint32_t start = pros::millis();
+        const std::uint32_t waitMs = 2000;
+        while (pros::millis() - start < waitMs && imu->is_calibrating()) pros::delay(10);
+        if (!imu->is_calibrating()) {
+          controller->rumble(".");
+          imuFeedbackTask = nullptr;
+          return;
+        }
+        while (imu->is_calibrating()) {
+          controller->rumble(".");
+          pros::delay(400);
+        }
+        controller->rumble(".");
+        imuFeedbackTask = nullptr;
+      },
+      "imu-calibration-feedback");
+    }
+
+    // Wait until the IMU finishes or reports an error.
+    do pros::delay(10);
+    while (sensors.imu->get_status() != pros::ImuStatus::error && sensors.imu->is_calibrating());
+
+    if (std::isfinite(sensors.imu->get_heading())) {
+      return true;
+    }
+
+    if (feedbackController != nullptr && canBuzz()) {
+      feedbackController->rumble("---");
+    }
+  }
+
+  sensors.imu = nullptr;
+  return false;
+}
+
+void fillDriveSubstitutes(OdomSensors& sensors, const Drivetrain& drivetrain) {
+  static TrackingWheel driveLeftSub(TrackingWheel::Source::DriveLeft, drivetrain.trackWidth() / 2.0);
+  static TrackingWheel driveRightSub(TrackingWheel::Source::DriveRight, -drivetrain.trackWidth() / 2.0);
+
+  if (sensors.vertical1 == nullptr) sensors.vertical1 = &driveLeftSub;
+  if (sensors.vertical2 == nullptr) sensors.vertical2 = &driveRightSub;
+}
+
+void startTrackingTask() {
+  if (trackingTask != nullptr) return;
+  trackingTask = new pros::Task([] {
+    while (true) {
+      update();
+      pros::delay(10);
+    }
+  },
+  "odom-tracker");
+}
 }  // namespace
 
 Drivetrain::Drivetrain(pros::MotorGroup* left,
@@ -123,20 +191,24 @@ void setSensors(const OdomSensors sensors, const Drivetrain drivetrain) {
   odomSensors = sensors;
   drive = drivetrain;
 
+  auto clean = [](double value) { return std::isfinite(value) ? value : 0.0; };
+
   if (odomSensors.vertical1 != nullptr) odomSensors.vertical1->reset();
   if (odomSensors.vertical2 != nullptr) odomSensors.vertical2->reset();
   if (odomSensors.horizontal1 != nullptr) odomSensors.horizontal1->reset();
   if (odomSensors.horizontal2 != nullptr) odomSensors.horizontal2->reset();
 
-  prevVertical1 = odomSensors.vertical1 != nullptr ? odomSensors.vertical1->getDistanceTraveled() : 0.0;
-  prevVertical2 = odomSensors.vertical2 != nullptr ? odomSensors.vertical2->getDistanceTraveled() : 0.0;
+  prevVertical1 = clean(odomSensors.vertical1 != nullptr ? odomSensors.vertical1->getDistanceTraveled() : 0.0);
+  prevVertical2 = clean(odomSensors.vertical2 != nullptr ? odomSensors.vertical2->getDistanceTraveled() : 0.0);
   prevHorizontal1 =
-      odomSensors.horizontal1 != nullptr ? odomSensors.horizontal1->getDistanceTraveled() : 0.0;
+      clean(odomSensors.horizontal1 != nullptr ? odomSensors.horizontal1->getDistanceTraveled() : 0.0);
   prevHorizontal2 =
-      odomSensors.horizontal2 != nullptr ? odomSensors.horizontal2->getDistanceTraveled() : 0.0;
+      clean(odomSensors.horizontal2 != nullptr ? odomSensors.horizontal2->getDistanceTraveled() : 0.0);
   prevVertical = prevVertical1;
   prevHorizontal = prevHorizontal1;
-  prevImu = odomSensors.imu != nullptr ? deg_to_rad(odomSensors.imu->get_rotation()) : 0.0;
+  const double imuReading =
+      odomSensors.imu != nullptr ? deg_to_rad(odomSensors.imu->get_rotation()) : 0.0;
+  prevImu = clean(imuReading);
 }
 
 void setDistanceResetSensors(const std::vector<DistanceResetSensor>& sensors,
@@ -254,28 +326,37 @@ Pose estimatePose(const float time, const bool radians) {
 
 void update() {
   // Fetch current sensor values.
+  auto clean = [](double value, double fallback) { return std::isfinite(value) ? value : fallback; };
+
   const double vertical1Raw =
-      odomSensors.vertical1 != nullptr ? odomSensors.vertical1->getDistanceTraveled() : 0.0;
+      odomSensors.vertical1 != nullptr ? odomSensors.vertical1->getDistanceTraveled() : prevVertical1;
   const double vertical2Raw =
-      odomSensors.vertical2 != nullptr ? odomSensors.vertical2->getDistanceTraveled() : 0.0;
+      odomSensors.vertical2 != nullptr ? odomSensors.vertical2->getDistanceTraveled() : prevVertical2;
   const double horizontal1Raw =
-      odomSensors.horizontal1 != nullptr ? odomSensors.horizontal1->getDistanceTraveled() : 0.0;
+      odomSensors.horizontal1 != nullptr ? odomSensors.horizontal1->getDistanceTraveled() : prevHorizontal1;
   const double horizontal2Raw =
-      odomSensors.horizontal2 != nullptr ? odomSensors.horizontal2->getDistanceTraveled() : 0.0;
-  const double imuRaw = odomSensors.imu != nullptr ? deg_to_rad(odomSensors.imu->get_rotation()) : 0.0;
+      odomSensors.horizontal2 != nullptr ? odomSensors.horizontal2->getDistanceTraveled() : prevHorizontal2;
+  const double imuRaw =
+      odomSensors.imu != nullptr ? deg_to_rad(odomSensors.imu->get_rotation()) : prevImu;
+
+  const double vertical1 = clean(vertical1Raw, prevVertical1);
+  const double vertical2 = clean(vertical2Raw, prevVertical2);
+  const double horizontal1 = clean(horizontal1Raw, prevHorizontal1);
+  const double horizontal2 = clean(horizontal2Raw, prevHorizontal2);
+  const double imu = clean(imuRaw, prevImu);
 
   // Compute deltas.
-  const double deltaVertical1 = vertical1Raw - prevVertical1;
-  const double deltaVertical2 = vertical2Raw - prevVertical2;
-  const double deltaHorizontal1 = horizontal1Raw - prevHorizontal1;
-  const double deltaHorizontal2 = horizontal2Raw - prevHorizontal2;
-  const double deltaImu = imuRaw - prevImu;
+  const double deltaVertical1 = vertical1 - prevVertical1;
+  const double deltaVertical2 = vertical2 - prevVertical2;
+  const double deltaHorizontal1 = horizontal1 - prevHorizontal1;
+  const double deltaHorizontal2 = horizontal2 - prevHorizontal2;
+  const double deltaImu = imu - prevImu;
 
-  prevVertical1 = vertical1Raw;
-  prevVertical2 = vertical2Raw;
-  prevHorizontal1 = horizontal1Raw;
-  prevHorizontal2 = horizontal2Raw;
-  prevImu = imuRaw;
+  prevVertical1 = vertical1;
+  prevVertical2 = vertical2;
+  prevHorizontal1 = horizontal1;
+  prevHorizontal2 = horizontal2;
+  prevImu = imu;
 
   // Heading estimation priority: horizontal wheels -> non-drive vertical wheels -> IMU -> fallback.
   double heading = odomPose.theta;
@@ -362,16 +443,22 @@ void update() {
   odomLocalSpeed.theta = ema(deltaHeading / kDt, odomLocalSpeed.theta, 0.95);
 }
 
+void init(OdomSensors sensors,
+          Drivetrain drivetrain,
+          const std::vector<DistanceResetSensor>& distanceSensors) {
+  calibrateImu(sensors, nullptr);
+  fillDriveSubstitutes(sensors, drivetrain);
+  setSensors(sensors, drivetrain);
+  setDistanceResetSensors(distanceSensors, distanceFieldSize);
+  startTrackingTask();
+}
+
 void init() {
-  if (trackingTask == nullptr) {
-    trackingTask = new pros::Task([] {
-      while (true) {
-        update();
-        pros::delay(10);
-      }
-    },
-    "odom-tracker");
-  }
+  calibrateImu(odomSensors, nullptr);
+  fillDriveSubstitutes(odomSensors, drive);
+  setSensors(odomSensors, drive);
+  setDistanceResetSensors(distanceResetSensors, distanceFieldSize);
+  startTrackingTask();
 }
 
 }  // namespace gen

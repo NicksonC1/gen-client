@@ -9,7 +9,7 @@
 - auton registry stub (`include/gen/auton.h`) ready for your routines
 
 ## Usage
-To use genClient, include the headers you need (e.g. `#include "gen/motion.h"`) and initialize odom once with `setSensors(...)` + `init()`. Most helpers expect inches for linear values and degrees for user-facing angles.
+To use genClient, include the headers you need (e.g. `#include "gen/motion.h"`) and initialize odom once with `gen::init(sensors, drivetrain, distanceSensors)`. Most helpers expect inches for linear values and degrees for user-facing angles.
 
 <font size = 6>**Hardware abstractions**</font>
 ---
@@ -75,9 +75,11 @@ Odom is modular: mix tracking wheels, substitute drive encoders, and optionally 
 - `gen::Drivetrain` tracks drive groups + geometry (`gear_ratio`, `wheel_diameter`, `track_width`, `wheelbase`). Helpers: `leftDistance()`, `rightDistance()`, `reset()`.
 - `gen::TrackingWheel` from a `pros::Rotation` + diameter + lateral offset; can also substitute `DriveLeft` / `DriveRight`.
 - `gen::OdomSensors` bundle: up to 2 vertical, 2 horizontal trackers + optional IMU.
+  - If vertical trackers are `nullptr`, odom will auto-substitute drive encoders for you.
 - lifecycle:
-  - `setSensors(OdomSensors, Drivetrain)`
-  - `setDistanceResetSensors(std::vector<DistanceResetSensor>, fieldSizeInches)` (optional)
+  - `init(OdomSensors, Drivetrain, std::vector<DistanceResetSensor>, fieldSizeInches)` kicks off calibration + tracking
+  - `setSensors(OdomSensors, Drivetrain)` (lower-level helper)
+  - `setDistanceResetSensors(std::vector<DistanceResetSensor>, fieldSizeInches)` (lower-level helper)
   - `init()` spins the 10ms tracking task
 - accessors:
   - `getPose(bool radians = false)` / `setPose(...)`
@@ -92,12 +94,10 @@ gen::TrackingWheel vR(&verticalRight, 2.75, -3.5, 1.0, true);
 gen::TrackingWheel h(&horizontal, 2.75, -2.5);
 gen::OdomSensors sensors{&vL, &vR, &h, nullptr, &imu};
 gen::Drivetrain drive(&leftMotors, &rightMotors, 1.333, 3.25, 11.5, 12.5);
-gen::setSensors(sensors, drive);
-gen::setDistanceResetSensors({
+gen::init(sensors, drive, {
   {&frontWall, gen::DistanceResetSensor::Side::Front, 0.0, 10.0},
   {&leftWall,  gen::DistanceResetSensor::Side::Left,  -4.0, 10.0},
 });
-gen::init();
 auto pose = gen::getPose(); // degrees by default
 ```
 

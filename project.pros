@@ -1,7 +1,7 @@
 {
   "py/object": "pros.conductor.project.Project",
   "py/state": {
-    "project_name": "GenC",
+    "project_name": "Gen-Client",
     "target": "v5",
     "templates": {
       "kernel": {
@@ -592,8 +592,9 @@
       }
     },
     "upload_options": {
-      "description": "Official 2025",
-      "icon": "alien"
+      "description": "Created by 78181A",
+      "icon": "alien",
+      "slot": 2
     },
     "use_early_access": false
   }

@@ -9,6 +9,13 @@
 
 using DriveMode = gen::Controller::DriveMode;
 using Button = gen::Controller::Button;
+
+// Toggle this to true if you add external rotation trackers; otherwise the drive encoders are used.
+constexpr bool kUseTrackingWheels = false;
+constexpr double kDriveGearRatio = 1.333;
+constexpr double kWheelDiameter = 3.25;
+constexpr double kTrackWidth = 11.5;
+constexpr double kWheelbase = 12.5;
  // <--------------------------------------------------------------- Setup ------------------------------------------------------------------>
 gen::Controller controller(DriveMode::Arcade2Stick, 3, 10.0, true, pros::E_CONTROLLER_MASTER);
 gen::Piston wingPiston('A', false, "wing");
@@ -21,17 +28,21 @@ pros::Distance leftWall(3);
 pros::Rotation verticalLeft(5);
 pros::Rotation verticalRight(6);
 pros::Rotation horizontal(7);
-gen::CustomIMU s_imu(9, 1.0);
+gen::CustomIMU s_imu(9, 1.01123595506);
 
-gen::MotorGroup leftMotors({-11, -12, -13}, 600.0, 1.333); 
-gen::MotorGroup rightMotors({18, 19, 20}, 600.0, 1.333); 
+gen::MotorGroup leftMotors({-11, -12, -13}, 600.0, kDriveGearRatio); 
+gen::MotorGroup rightMotors({18, 19, 20}, 600.0, kDriveGearRatio); 
 
+// Tracking wheel variants.
 gen::TrackingWheel verticalLTracker(&verticalLeft, 2.75, 3.5, 1.0, false);
 gen::TrackingWheel verticalRTracker(&verticalRight, 2.75, -3.5, 1.0, true);
 gen::TrackingWheel horizontalTracker(&horizontal, 2.75, -2.5);
 
-gen::OdomSensors sensors{&verticalLTracker, &verticalRTracker, &horizontalTracker, nullptr, &s_imu};
-gen::Drivetrain drive(&leftMotors, &rightMotors, 1.333, 3.25, 11.5, 12.5);
+gen::OdomSensors sensors =
+    kUseTrackingWheels
+        ? gen::OdomSensors{&verticalLTracker, &verticalRTracker, &horizontalTracker, nullptr, &s_imu}
+        : gen::OdomSensors{nullptr, nullptr, nullptr, nullptr, &s_imu};  // null -> drive encoders substituted
+gen::Drivetrain drive(&leftMotors, &rightMotors, kDriveGearRatio, kWheelDiameter, kTrackWidth, kWheelbase);
 
 std::vector<gen::DistanceResetSensor> distanceResetSensors = {
     {&frontWall, gen::DistanceResetSensor::Side::Front, 0.0, 10.0},
@@ -119,12 +130,11 @@ void selector() {
 void initialize() {
   pros::Task t_Select(selector);
 	pros::lcd::initialize();
-  gen::setSensors(sensors, drive);
-  gen::setDistanceResetSensors(distanceResetSensors);
-  gen::init();
 
-  // Example: access a single motor inside the group for diagnostics.
-  leftMotors[1].set_brake_mode(pros::E_MOTOR_BRAKE_HOLD);
+  gen::init(sensors, drive, distanceResetSensors);
+  motion.setPose(0.0, 0.0, 0.0); 
+
+  // leftMotors[1].set_brake_mode(pros::E_MOTOR_BRAKE_COAST);
   pros::lcd::print(3, "Left mid temp: %.1f", leftMotors[1].get_temperature());
 
   pros::Task screenTask([&]() {

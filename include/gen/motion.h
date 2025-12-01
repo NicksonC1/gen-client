@@ -9,11 +9,11 @@
 
 namespace gen {
 
-/**
- * Motion helper inspired by the inspo motion algorithms.
- * Provides higher-level moves that pair odometry feedback with PID loops.
- */
-class Motion {
+  /**
+   * Motion helper inspired by the inspo motion algorithms.
+   * Provides higher-level moves that pair odometry feedback with PID loops.
+   */
+  class Motion {
  public:
   struct Tuning {
     double kP{0.0};
@@ -25,19 +25,20 @@ class Motion {
     double minCommand{0.0};
   };
 
-  /**
-   * @param left motor group to command (left side)
-   * @param right motor group to command (right side)
-   * @param lateral PID limits and tolerances for translation
-   * @param angular PID limits and tolerances for rotation
-   */
-  Motion(pros::MotorGroup& left, pros::MotorGroup& right, Tuning lateral, Tuning angular);
+    /**
+     * @param left motor group to command (left side)
+     * @param right motor group to command (right side)
+     * @param lateral PID limits and tolerances for translation
+     * @param angular PID limits and tolerances for rotation
+     */
+    Motion(pros::MotorGroup& left, pros::MotorGroup& right, Tuning lateral, Tuning angular);
 
-  // Low-level helpers.
-  Pose getPose(bool radians = false) const;
-  void tank(int leftPower, int rightPower);
-  void arcade(int forward, int turn);
-  void stop();
+    // Low-level helpers.
+    Pose getPose(bool radians = false) const;
+    void setPose(double x, double y, double theta, bool radians = false);
+    void tank(int leftPower, int rightPower);
+    void arcade(int forward, int turn);
+    void stop();
 
   // Rotate to an absolute field heading (degrees).
   /**

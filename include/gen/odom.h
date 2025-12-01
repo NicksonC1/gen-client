@@ -4,6 +4,7 @@
 #include "gen/misc.h"
 #include "pros/distance.hpp"
 #include "pros/imu.hpp"
+#include "pros/misc.hpp"
 #include "pros/motor_group.hpp"
 #include "pros/motors.hpp"
 #include "pros/rotation.hpp"
@@ -106,5 +107,8 @@ void setDistanceResetSensors(const std::vector<DistanceResetSensor>& sensors,
 bool resetFromDistanceSensors();
 void update();
 void init();
+void init(OdomSensors sensors,
+          Drivetrain drivetrain,
+          const std::vector<DistanceResetSensor>& distanceSensors = {});
 
 }  // namespace gen
